@@ -21,7 +21,7 @@ The pipeline step's consist in:
   5. Coverage-based filtering and plotting
 
 
-![pipeline overview](pipeline-overview.png)
+![pipeline overview](pipeline-overview.PNG)
 
 ---
 
