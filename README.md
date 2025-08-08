@@ -108,6 +108,24 @@ mamba env create -f environment.yml
 mamba activate microbRNA
 ```
 
+This pipeline works with a modified version of metaphlan that allows for paired-end alignment. Since the tool was not originally
+created with this characteristics, we also added a , to be able to use paired-end metaphlan it is necessary to copy this version on the conda directory, by running:
+```bash
+cp metaphlan.py $CONDA_PREFIX/lib/python3.7/site-packages/metaphlan/metaphlan.py
+```
+
+Or, if you do not want to remove complitely the original version of metaphlan:
+```bash
+cp metaphlan.py $CONDA_PREFIX/lib/python3.7/site-packages/metaphlan/paired-metaphlan.py
+cd $CONDA_PREFIX/lib/python3.7/site-packages/metaphlan
+mv metaphlan.py original-metaphlan.py
+mv paired-metaphlan.py metaphlan.py 
+```
+
+Now everything is ready to run the pipeline!
+
+---
+
 The pipeline needs 4 required parameters in input:
 ```text
  --star-index DIR        A directory of paired-end FASTQ files, named with `_R1.fastq.gz` and `_R2.fastq.gz` suffixes
