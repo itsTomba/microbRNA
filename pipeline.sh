@@ -14,12 +14,15 @@ cat <<EOF
 Usage: $0 [OPTIONS]
 
 Required arguments:
-  --index-dir DIR           Path to the STAR reference genome index directory.
-  --fastq-dir DIR           Directory containing input FASTQ files.
-  -a, --star-path DIR	    Path to the STAR bin
+  -n, --star-index DIR      Path to the STAR reference genome index directory.
+  -i, --fastq-dir DIR       Directory containing input FASTQ files.
+  -d, --mpa-dir DIR         Path to the MetaPhlAn database.
+  -b, --blast-dir DIR       Path to the BLAST database.
 
 Optional arguments:
   -c, --coverage N          Percentage of coverage to consider a marker as positive. [default: (30 40)]
+  -l, --blast-index STR     Name of BLAST database. [default: core_nt]
+  -x, --mpa-index STR       Version of the MetaPhlAn database. [default: mpa_vJan25_CHOCOPhlAnSGB_202503 (latest)]
   -t, --threads N           Number of threads to use. [default: 8]
   -u, --unmapped-dir DIR    Directory where to store unmapped reads on reference genome. [default: ./unmapped_reads]
   -w, --working-dir DIR     Directory where intermediate files and output files will be store. [default: .]
@@ -28,7 +31,7 @@ Optional arguments:
   -h, --help                Show this help message and exit.
 
 Example:
-  $0 --index-dir /path/to/index --fastq-dir /path/to/fastq/files -a path/to/STAR/bin --threads 8
+  $0 --star-index /path/to/index --fastq-dir /path/to/fastq/files --mpa-dir /path/to/metaphlan/database --blast-dir /path/to/blast/db/ --threads 8
 
 EOF
 
@@ -36,9 +39,12 @@ exit 0
 }
 
 # Default values
-index_dir=""
+star_index=""
 fastq_dir=""
-star_path=""
+mpa_db=""
+mpa_index="mpa_vJan25_CHOCOPhlAnSGB_202503"
+blast_dir=""
+blast_index="core_nt"
 threads=8
 unmapped_dir="$PWD/unmapped_reads"
 wd="$PWD/"
@@ -47,12 +53,16 @@ si_thr=("98" "80")
 outdir="$PWD/results"
 coverage=("30" "40")
 
+
 # Manual parsing loop
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
-    --index-dir) index_dir="$2"; shift ;;
-    --fastq-dir) fastq_dir="$2"; shift ;;
-    -a|--star-path) star_path="$2"; shift ;;
+    -i|--fastq-dir) fastq_dir="$2"; shift ;;
+    -d|--mpa-dir) mpa_db="$2"; shift ;;
+    -x|--mpa-index) mpa_index="$2"; shift ;;
+    -b|--blast-dir) blast_dir="$2"; shift ;;
+    -l|--blast-index) blast_index="$2"; shift ;;
+    -n|--star-index) star_index="$2"; shift ;;
     -t|--threads) threads="$2"; shift ;;
     -u|--unmapped-dir) unmapped_dir="$2"; shift ;;
     -w|--working-dir) wd="$2"; shift ;; 
@@ -81,16 +91,20 @@ done
 
 
 # Check required directories
-if [[ -z "$index_dir" || -z "$fastq_dir" || -z "$star_path" ]]; then
-  echo -e "[FATAL] --index-dir, --fastq-dir and --star_path are required\n"
+if [[ -z "$star_index" || -z "$fastq_dir" ]]; then
+  echo -e "[FATAL] --index-dir and --fastq-dir are required\n"
   exit 1
 fi
 
 
 # Print the choose parameters:
-echo "Choosen parameters:"
-echo -e "  Genome index directory: $index_dir"
+echo "Chosen parameters:"
+echo -e "  Genome index directory: $star_index"
 echo -e "  Input directory with fastq files: $fastq_dir"
+echo -e "  MetaPhlAn database directory: $mpa_db"
+echo -e "  MetaPhlAn database version: $mpa_index"
+echo -e "  BLAST database directory: $blast_dir"
+echo -e "  BLAST database version: $blast_index"
 echo -e "  Threads: $threads"
 echo -e "  Directory storing unmapped_reads: $unmapped_dir"
 echo -e "  Working directory: $wd"
@@ -106,11 +120,10 @@ if [ ! -d "$fastq_dir" ]; then
 fi
 
 # Check the existance of the genome index directory:
-if [ ! -d "$index_dir" ]; then
-  echo -e "[FATAL] Directory '$index_dir' does not exist."
-  echo "[?] Generate one with the commands:"
-  echo "[?]   STAR=/data/bacterial_Pipeline/STAR-2.7.4a/bin/Linux_x86_64_static/STAR"
-  echo "[?]   $STAR --runMode genomeGenerate --genomeDir path/to/new/index --runThreadN 16 --genomeFastaFiles /path/to/reference/fasta  "
+if [ ! -d "$star_index" ]; then
+  echo -e "[FATAL] Directory '$star_index' does not exist."
+  echo "[?] Generate one with the command:"
+  echo "[?]   STAR --runMode genomeGenerate --genomeDir path/to/new/index --runThreadN 16 --genomeFastaFiles /path/to/reference/fasta --sjdbGTFfile /path/to/annotations.gtf"
   exit 1
 fi
 
@@ -143,18 +156,8 @@ if [ ! -d "$wd" ]; then
 fi
 
 
-
-
 #############################################################################################################################################################################
-# STEP 1 : STAR ALIGNMENT TO RETRIEVE NON-MAPPING READS (from /data/adalla/run_humann/run_STAR.sh)
-
-STAR=star_path
-
-#echo 
-#echo "Generating new genome"
-# $STAR --runMode genomeGenerate --genomeDir "/data/adalla/GRCh38.p14-genome-index" --runThreadN 15 --genomeFastaFiles "/data/adalla/GCF_000001405.40_GRCh38.p14_genomic.fna"
-#echo "Genome index generation ended correctly"
-#echo 
+# STEP 1 : STAR ALIGNMENT TO RETRIEVE NON-MAPPING READS
 
 echo
 echo "####################################"
@@ -170,7 +173,7 @@ do
   
     
   # Check if it is necessary to skip the alignment on current sample
-  if [[ -f "${unmapped_dir}/$sample/${sample}_R1.Unmapped.out.gz" && -f "${unmapped_dir}/$sample/${sample}_R1.Unmapped.out.gz" ]]; then
+  if [[ -f "${unmapped_dir}/$sample/${sample}_R1.Unmapped.out.gz" && -f "${unmapped_dir}/$sample/${sample}_R2.Unmapped.out.gz" ]]; then
       echo -e "[✓] Skipping $sample"
       continue
   fi
@@ -188,13 +191,13 @@ do
   
   if [[ ! -f "${unmapped_dir}/$sample/${sample}.Aligned.sortedByCoord.out.bam" ]]; then
       echo "[ ] STAR alignment"
-      $STAR --runMode alignReads \
+      STAR --runMode alignReads \
         --readFilesIn $read1 $read2 \
         --outFileNamePrefix ${unmapped_dir}/${sample}/${sample}"." \
         --readFilesCommand zcat \
-        --limitGenomeGenerateRAM 358247314100 \
+        #--limitGenomeGenerateRAM 358247314100 \
         --alignEndsType EndToEnd \
-        --genomeDir $index_dir \
+        --genomeDir $star_index \
         --alignIntronMax 1000000 \
         --outSAMunmapped Within \
         --runThreadN $threads \
@@ -259,12 +262,6 @@ echo
 echo "#######################################"
 echo "STEP 2: ALIGNMENT TO METAPHLAN DATABASE"
 
-source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate mpa422
-
-NEW_BOWTIE2_DB="/data/adalla/mpa422"
-NEW_INDEX="mpa_vJan25_CHOCOPhlAnSGB_202503"
-
 for mate1_gz in $( ls "$unmapped_dir"/*/*_R1.Unmapped.out.gz ); do
 
     # Get corresponding mate2.gz file
@@ -308,8 +305,8 @@ for mate1_gz in $( ls "$unmapped_dir"/*/*_R1.Unmapped.out.gz ); do
         --nproc $threads \
         --profile_vsc \
         --vsc_out $vscout \
-        --db_dir "$NEW_BOWTIE2_DB" \
-        --index "$NEW_INDEX" \
+        --db_dir "$mpa_db" \
+        --index "$mpa_index" \
         --samout "$samout" \
         --stat_q 0.01 \
         --force \
@@ -346,16 +343,13 @@ echo
 echo "##################################################"
 echo "STEP 3: FILTERING OF HOMO SAPIENS READS WITH BLAST"
 
-source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate base
-
 # First thing to do is retrieving the unique_species_file.txt that will be used in downstream analysis
 python scripts/parse-metaphlan-out.py $wd $outdir "" 0
 
 # Retreive all the markers associated to each species found in the dataset
 mkdir -p $wd/species-markers
 
-marker_info="$NEW_BOWTIE2_DB/mpa_vJan25_CHOCOPhlAnSGB_202503_marker_info.txt"
+marker_info="$mpa_db/${mpa_index}_marker_info.txt"
 
 if  [[ $(ls species-markers | wc -l) -ne $(wc -l < "$wd/preBLAST_species_file.tsv") ]]; then 
     echo "[*] Extracting markers for the found species"
@@ -371,12 +365,7 @@ else
     echo -e "[✓] Markers file for each species already present\n"
 fi
 
-# Then we can blast the reads mapping on metaphlan database so that we can filter them
-source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate blast
 
-export BLASTDB=/data/adalla/core_nt
-core_nt="/data/adalla/core_nt/core_nt"
 
 for sample_dir in "$outdir"/*; do
 
@@ -412,10 +401,6 @@ for sample_dir in "$outdir"/*; do
         echo "--- Skipping $sample ---"
         continue
     else
-        if [[ "$sample" == "A38289" ]]; then
-          echo "The variable is equal to some_string"
-          continue
-        fi
         echo "----- Processing: $sample -----"
     fi
     
@@ -460,16 +445,6 @@ for sample_dir in "$outdir"/*; do
     else
         echo "[✓] $(basename $mapped_sorted_bam) already present"
     fi
-        
-    # num_reads=$( samtools view -c "$OUTPUT_BAM" ) 
-    #if [[ $num_reads -gt 1000000 ]]; then
-    #    echo "[!] Too many reads mapped: $num_reads"
-    #    echo "$SAMPLE_NAME has too many reads mapped" >> "/data/adalla/too_many.txt" 
-    #    echo
-        # create and empty file so that this code is not executed each time i run the script
-        # touch "$OUTPUT_BLAST"
-    #    continue
-    #fi
     
     # To reduce the computational time of running blast, I do not take both reads of a pair (if they are both aligned), 
     # but i subset them so that i'm taking only single ends basically. This is because the reads comes from the same 
@@ -494,9 +469,6 @@ for sample_dir in "$outdir"/*; do
     echo "About ${diff}% of the reads were saved"
     # echo "${sample},${diff}%" >> "$wd/saved-reads.csv"
     
-    # [[ $tmp2 -gt 1000000 ]] && echo "$sample" >> /data/adalla/final/skipped-samples.txt && echo "Skipping $sample because of too many reads" && continue
-    
-    
     # If there is no output FASTA file of the reads to be blasted
     if [[ ! -f "$mapped_filtered_sorted_fasta"  || ! -s "$mapped_filtered_sorted_fasta" ]]; then
         echo "[*] Converting BAM to FASTA..."
@@ -508,7 +480,7 @@ for sample_dir in "$outdir"/*; do
     
     # Now i run BLAST looking for only matches on homo-sapiens. If i find them then I will remove that read in case of sequence identity of 100%
     echo "[*] Running megablast ..."
-    blastn -query $mapped_filtered_sorted_fasta -db $core_nt -task megablast -taxids 9606 -num_threads $threads -outfmt '6 qseqid sseqid qstart quend sstart send evalue bitscore length pident nident mismatch gapopen staxid ssciname sstrand' > "$blastout"
+    blastn -query $mapped_filtered_sorted_fasta -db $blast_dir/$blast_index -task megablast -taxids 9606 -num_threads $threads -outfmt '6 qseqid sseqid qstart quend sstart send evalue bitscore length pident nident mismatch gapopen staxid ssciname sstrand' > "$blastout"
 
     [[ -f $mapped_filtered_sorted_fasta ]] && rm $mapped_filtered_sorted_fasta
     [[ -f $mapped_filtered_sorted_bam ]] && rm $mapped_filtered_sorted_bam
@@ -570,9 +542,6 @@ echo
 echo "##########################################################################"
 echo "STEP 4: FINAL METAPHLAN RUN ON THE FILTERED READS AND COVERAGE COMPUTATION"
 
-# Activate biobkaery3 environment
-source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate biobakery3
 
 for sample_dir in "$outdir"/*; do
 
@@ -609,8 +578,8 @@ for sample_dir in "$outdir"/*; do
         
         metaphlan $mpa_input_sam \
             --input_type sam \
-            --bowtie2db $NEW_BOWTIE2_DB \
-            --index $NEW_INDEX \
+            --bowtie2db $mpa_db \
+            --index $mpa_index \
             --stat_q 0.01 \
             --force \
             --stat tavg_l \
@@ -647,10 +616,6 @@ echo
 echo "##############################################"
 echo "STEP 5 : PLOTTING RESULTS AND COVERAGE STUDIES"
 
-
-# Activate base environment
-source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate base
 
 for si in "${si_thr[@]}"; do
     
