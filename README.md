@@ -13,7 +13,7 @@ the identification of potential pathogen-derived sequences associated with cance
 thus expanding the repertoire of strategies for treating tumors in a more precise and
 personalized manner.
 
-The pipeline step's consist in:
+The pipeline steps consist in:
   1. Alignining RNA-seq reads to the reference genome and extract non-mapping reads
   2. Aligning unmapped reads to MetaPhlAn database
   3. BLAST filtering
